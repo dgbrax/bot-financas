@@ -11,6 +11,7 @@ export const EXPENSE_CATEGORIES = [
   'Compras',
   'Educação',
   'Assinaturas',
+  'Transferências',
   'Outros',
 ] as const
 
@@ -20,6 +21,7 @@ export const INCOME_CATEGORIES = [
   'Investimentos',
   'Reembolso',
   'Presente',
+  'Transferências',
   'Outros',
 ] as const
 
@@ -30,6 +32,10 @@ export const METHODS = [
   { value: 'dinheiro', label: 'Dinheiro' },
   { value: 'boleto', label: 'Boleto' },
   { value: 'transferencia', label: 'Transferência' },
+  { value: 'saque', label: 'Saque' },
+  { value: 'deposito', label: 'Depósito' },
+  { value: 'tarifa', label: 'Tarifa' },
+  { value: 'outro', label: 'Outro' },
 ] as const
 
 export const METHOD_VALUES = METHODS.map((m) => m.value) as string[]

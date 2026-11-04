@@ -29,6 +29,13 @@
       "when": 1793809382123,
       "tag": "0003_account_id_not_null",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793810810331,
+      "tag": "0004_pluggy_integration",
+      "breakpoints": true
     }
   ]
 }

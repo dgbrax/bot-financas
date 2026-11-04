@@ -45,6 +45,7 @@ DATABASE_URL=... pnpm db:generate   # writes SQL to ./drizzle (does not touch th
   - `0001_bank_accounts.sql`: `bank_accounts` table; `accountId`, `source`, `externalId` on `transactions`.
   - `0002_seed_default_accounts.sql`: default accounts (Inter, Santander, Carteira) for existing users and backfill of `transactions.accountId`. Idempotent.
   - `0003_account_id_not_null.sql`: `transactions.accountId` becomes NOT NULL. Before running, check `SELECT count(*) FROM transactions WHERE "accountId" IS NULL` returns 0.
+  - `0004_pluggy_integration.sql`: Pluggy tables (`pluggy_items`, `sync_runs`, `webhook_events`) and import/classification/reconciliation columns on `bank_accounts` and `transactions`. Additive only.
 - The existing database was created before drizzle-kit, so a few constraint names differ from the snapshots (e.g. `user_email_key` vs `user_email_unique`), and it has an index `transactions_user_date_idx` and CHECK constraints that `schema.ts` doesn't declare. Review generated SQL that touches those before applying it.
 
 ## Local development
