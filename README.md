@@ -31,3 +31,14 @@ To learn more, take a look at the following resources:
 - [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
 - [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 - [v0 Documentation](https://v0.app/docs) - learn about v0 and how to use it.
+
+## Database migrations
+
+Migrations are generated with drizzle-kit and **applied manually** in the Neon SQL editor (test branch first). `drizzle-kit migrate`/`push` are not used.
+
+```bash
+DATABASE_URL=... pnpm db:generate   # writes SQL to ./drizzle (does not touch the DB)
+```
+
+- `drizzle/0000_baseline.sql` describes the schema that already existed before migrations were introduced. **Do not run it on an existing database**; it is only the starting point for drizzle-kit's snapshots. Use it only to create a fresh database.
+- Apply later files (`0001_*`, `0002_*`, ...) in order.
