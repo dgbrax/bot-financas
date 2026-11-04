@@ -9,6 +9,31 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Logo } from '@/components/logo'
 
+// Better Auth error codes -> pt-BR messages.
+const AUTH_ERRORS: Record<string, string> = {
+  USER_ALREADY_EXISTS: 'Já existe uma conta com esse e-mail. Tente entrar.',
+  USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL:
+    'Já existe uma conta com esse e-mail. Tente entrar.',
+  INVALID_EMAIL_OR_PASSWORD: 'E-mail ou senha incorretos.',
+  INVALID_EMAIL: 'E-mail inválido.',
+  INVALID_PASSWORD: 'Senha inválida.',
+  PASSWORD_TOO_SHORT: 'A senha precisa ter pelo menos 8 caracteres.',
+  PASSWORD_TOO_LONG: 'A senha é longa demais (máximo 128 caracteres).',
+}
+
+function authErrorMessage(
+  error: { code?: string; status?: number },
+  isSignUp: boolean,
+) {
+  if (error.status === 429) {
+    return 'Muitas tentativas. Aguarde um pouco e tente de novo.'
+  }
+  if (error.code && AUTH_ERRORS[error.code]) return AUTH_ERRORS[error.code]
+  return isSignUp
+    ? 'Não foi possível criar a conta. Tente novamente.'
+    : 'Não foi possível entrar. Tente novamente.'
+}
+
 export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
@@ -23,22 +48,24 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
     const email = String(form.get('email'))
     const password = String(form.get('password'))
 
-    const { error } = isSignUp
-      ? await authClient.signUp.email({
-          email,
-          password,
-          name: String(form.get('name')),
-        })
-      : await authClient.signIn.email({ email, password })
+    let result: { error: { code?: string; status?: number } | null }
+    try {
+      result = isSignUp
+        ? await authClient.signUp.email({
+            email,
+            password,
+            name: String(form.get('name')).trim(),
+          })
+        : await authClient.signIn.email({ email, password })
+    } catch {
+      setLoading(false)
+      setError('Sem conexão com o servidor. Tente novamente.')
+      return
+    }
 
-    setLoading(false)
-    if (error) {
-      console.error('Auth error:', error)
-      setError(
-        isSignUp
-          ? 'Não foi possível criar a conta. Verifique os dados.'
-          : 'E-mail ou senha incorretos.',
-      )
+    if (result.error) {
+      setLoading(false)
+      setError(authErrorMessage(result.error, isSignUp))
       return
     }
     router.push('/')
@@ -85,6 +112,7 @@ export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
               type="password"
               required
               minLength={8}
+              maxLength={128}
               autoComplete={isSignUp ? 'new-password' : 'current-password'}
             />
           </div>
