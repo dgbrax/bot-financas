@@ -41,4 +41,18 @@ DATABASE_URL=... pnpm db:generate   # writes SQL to ./drizzle (does not touch th
 ```
 
 - `drizzle/0000_baseline.sql` describes the schema that already existed before migrations were introduced. **Do not run it on an existing database**; it is only the starting point for drizzle-kit's snapshots. Use it only to create a fresh database.
-- Apply later files (`0001_*`, `0002_*`, ...) in order.
+- Apply later files in order, each inside a transaction:
+  - `0001_bank_accounts.sql`: `bank_accounts` table; `accountId`, `source`, `externalId` on `transactions`.
+  - `0002_seed_default_accounts.sql`: default accounts (Inter, Santander, Carteira) for existing users and backfill of `transactions.accountId`. Idempotent.
+  - `0003_account_id_not_null.sql`: `transactions.accountId` becomes NOT NULL. Before running, check `SELECT count(*) FROM transactions WHERE "accountId" IS NULL` returns 0.
+- The existing database was created before drizzle-kit, so a few constraint names differ from the snapshots (e.g. `user_email_key` vs `user_email_unique`), and it has an index `transactions_user_date_idx` and CHECK constraints that `schema.ts` doesn't declare. Review generated SQL that touches those before applying it.
+
+## Local development
+
+```bash
+cp .env.example .env.local   # then fill DATABASE_URL (Neon TEST branch) and BETTER_AUTH_SECRET
+corepack pnpm install
+corepack pnpm dev            # http://localhost:3000
+corepack pnpm test           # unit tests (vitest)
+corepack pnpm build          # production build, includes type checking
+```

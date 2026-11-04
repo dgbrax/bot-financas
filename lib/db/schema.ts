@@ -98,10 +98,10 @@ export const transactions = pgTable(
   {
     id: serial('id').primaryKey(),
     userId: text('userId').notNull(),
-    // Nullable until existing rows are backfilled; NOT NULL in a later migration.
-    accountId: integer('accountId').references(() => bankAccounts.id, {
-      onDelete: 'restrict',
-    }),
+    // Backfilled by 0002; NOT NULL since 0003.
+    accountId: integer('accountId')
+      .notNull()
+      .references(() => bankAccounts.id, { onDelete: 'restrict' }),
     type: text('type').$type<'income' | 'expense'>().notNull(),
     amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
     description: text('description').notNull(),

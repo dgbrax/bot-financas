@@ -1,0 +1,1 @@
+ALTER TABLE "transactions" ALTER COLUMN "accountId" SET NOT NULL;

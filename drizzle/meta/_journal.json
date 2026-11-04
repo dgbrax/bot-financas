@@ -22,6 +22,13 @@
       "when": 1793802317457,
       "tag": "0002_seed_default_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793809382123,
+      "tag": "0003_account_id_not_null",
+      "breakpoints": true
     }
   ]
 }
