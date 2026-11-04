@@ -1,9 +1,10 @@
 'use server'
 
-import { and, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, isNull, lt, ne, sql } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { getUserId } from '@/lib/session'
+import { suggestMatchForManual } from '@/lib/pluggy/sync'
 import { db } from '@/lib/db'
 import { bankAccounts, transactions } from '@/lib/db/schema'
 import { ensureDefaultAccounts } from '@/lib/accounts'
@@ -112,6 +113,19 @@ export async function getMonthTransactions(monthKey: string) {
       method: transactions.method,
       occurredAt: transactions.occurredAt,
       accountName: bankAccounts.name,
+      source: transactions.source,
+      status: transactions.status,
+      categoryStatus: transactions.categoryStatus,
+      isTransfer: transactions.isTransfer,
+      recurring: transactions.recurring,
+      merchant: transactions.merchant,
+      matchStatus: transactions.matchStatus,
+      duplicateOf: transactions.duplicateOf,
+      matchCandidate: sql<{ id: number; description: string; occurredAt: string } | null>`(
+        select json_build_object('id', m."id", 'description', m."description", 'occurredAt', m."occurredAt")
+        from "transactions" m
+        where m."id" = ${transactions.matchCandidateId} and m."userId" = ${transactions.userId}
+      )`,
     })
     .from(transactions)
     .leftJoin(bankAccounts, eq(bankAccounts.id, transactions.accountId))
@@ -143,6 +157,8 @@ export async function getMonthlyFlow(monthKey: string, months = 6) {
         eq(transactions.userId, userId),
         gte(transactions.occurredAt, start),
         lt(transactions.occurredAt, end),
+        eq(transactions.isTransfer, false),
+        isNull(transactions.duplicateOf),
       ),
     )
     .groupBy(sql`1`, transactions.type)
@@ -234,6 +250,31 @@ export async function saveTransaction(
   formData: FormData,
 ): Promise<ActionState> {
   const userId = await getUserId()
+
+  // Imported rows: amount/date/account come from the bank; only the category
+  // can be corrected, and doing so confirms it.
+  const rawEditId = formData.get('id')
+  if (rawEditId) {
+    const [existing] = await db
+      .select({ id: transactions.id, source: transactions.source, type: transactions.type })
+      .from(transactions)
+      .where(and(eq(transactions.id, Number(rawEditId)), eq(transactions.userId, userId)))
+    if (!existing) return { error: 'Transação não encontrada.' }
+    if (existing.source !== 'manual') {
+      const category = String(formData.get('category') ?? '')
+      const allowed: readonly string[] =
+        existing.type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
+      if (!allowed.includes(category)) return { error: 'Escolha uma categoria.' }
+      await db
+        .update(transactions)
+        .set({ category, categoryStatus: 'confirmed' })
+        .where(and(eq(transactions.id, existing.id), eq(transactions.userId, userId)))
+      revalidatePath('/')
+      const returnTo = String(formData.get('returnTo') ?? '')
+      redirect(/^\/\?mes=\d{4}-(0[1-9]|1[0-2])$/.test(returnTo) ? returnTo : '/')
+    }
+  }
+
   const parsed = await readTransactionForm(userId, formData)
   if ('error' in parsed) return parsed
 
@@ -252,9 +293,12 @@ export async function saveTransaction(
     const returnTo = String(formData.get('returnTo') ?? '')
     redirect(/^\/\?mes=\d{4}-(0[1-9]|1[0-2])$/.test(returnTo) ? returnTo : '/')
   } else {
-    await db
+    const [created] = await db
       .insert(transactions)
       .values({ userId, source: 'manual', ...parsed.data })
+      .returning({ id: transactions.id })
+    // If the bank already imported this transaction, suggest the match.
+    await suggestMatchForManual(userId, created.id).catch(() => false)
   }
 
   revalidatePath('/')
@@ -272,8 +316,97 @@ export async function getTransaction(id: number) {
 
 export async function deleteTransaction(id: number) {
   const userId = await getUserId()
+  // Imported rows would come back on the next sync; they are kept.
   await db
     .delete(transactions)
+    .where(
+      and(
+        eq(transactions.id, id),
+        eq(transactions.userId, userId),
+        ne(transactions.source, 'bank'),
+      ),
+    )
+  revalidatePath('/')
+}
+
+/** Accept the automatic category as correct. */
+export async function acceptCategory(id: number) {
+  const userId = await getUserId()
+  await db
+    .update(transactions)
+    .set({ categoryStatus: 'confirmed' })
     .where(and(eq(transactions.id, id), eq(transactions.userId, userId)))
+  revalidatePath('/')
+}
+
+/**
+ * The user confirms an imported row and its suggested manual row are the
+ * same transaction. The manual row is kept (not deleted or changed) but
+ * marked as a duplicate, which excludes it from totals and balances.
+ */
+export async function confirmMatch(importedId: number) {
+  const userId = await getUserId()
+  const [imp] = await db
+    .select({ id: transactions.id, candidate: transactions.matchCandidateId, status: transactions.matchStatus })
+    .from(transactions)
+    .where(and(eq(transactions.id, importedId), eq(transactions.userId, userId), eq(transactions.source, 'bank')))
+  if (!imp?.candidate || imp.status !== 'suggested') return
+  await db.transaction(async (tx) => {
+    const marked = await tx
+      .update(transactions)
+      .set({ duplicateOf: imp.id })
+      .where(
+        and(
+          eq(transactions.id, imp.candidate!),
+          eq(transactions.userId, userId),
+          ne(transactions.source, 'bank'),
+          isNull(transactions.duplicateOf),
+        ),
+      )
+      .returning({ id: transactions.id })
+    if (marked.length === 0) return
+    await tx
+      .update(transactions)
+      .set({ matchStatus: 'confirmed' })
+      .where(and(eq(transactions.id, imp.id), eq(transactions.userId, userId)))
+  })
+  revalidatePath('/')
+}
+
+/** Not the same transaction: stop suggesting it. */
+export async function dismissMatch(importedId: number) {
+  const userId = await getUserId()
+  await db
+    .update(transactions)
+    .set({ matchStatus: 'dismissed' })
+    .where(
+      and(
+        eq(transactions.id, importedId),
+        eq(transactions.userId, userId),
+        eq(transactions.source, 'bank'),
+        eq(transactions.matchStatus, 'suggested'),
+      ),
+    )
+  revalidatePath('/')
+}
+
+/** Undo a confirmed match: the manual row counts again. */
+export async function undoMatch(manualId: number) {
+  const userId = await getUserId()
+  const [man] = await db
+    .select({ id: transactions.id, dup: transactions.duplicateOf })
+    .from(transactions)
+    .where(and(eq(transactions.id, manualId), eq(transactions.userId, userId)))
+  if (!man?.dup) return
+  await db.transaction(async (tx) => {
+    await tx
+      .update(transactions)
+      .set({ duplicateOf: null })
+      .where(and(eq(transactions.id, man.id), eq(transactions.userId, userId)))
+    await tx
+      .update(transactions)
+      .set({ matchStatus: 'suggested' })
+      .where(and(eq(transactions.id, man.dup!), eq(transactions.userId, userId)))
+  })
   revalidatePath('/')
 }

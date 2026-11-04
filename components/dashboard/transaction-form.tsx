@@ -37,6 +37,8 @@ export type EditableTransaction = {
   method: string
   occurredAt: string
   accountId: number | null
+  /** 'manual' rows are fully editable; imported rows only their category. */
+  source?: string
 }
 
 const amountInput = new Intl.NumberFormat('pt-BR', {
@@ -82,6 +84,9 @@ export function TransactionForm({
     amountRef.current?.focus()
   }, [state])
 
+  // Imported rows: amount, date and account come from the bank.
+  const locked = !!editing && !!editing.source && editing.source !== 'manual'
+
   // Keep the original category only while the type is unchanged.
   const defaultCategory =
     editing && editing.type === type ? editing.category : undefined
@@ -117,6 +122,7 @@ export function TransactionForm({
               type="button"
               role="radio"
               aria-checked={type === value}
+              disabled={locked}
               onClick={() => setType(value)}
               className={cn(
                 'rounded-md px-3 py-1 font-medium text-muted-foreground transition-colors',
@@ -155,6 +161,7 @@ export function TransactionForm({
             inputMode="decimal"
             placeholder="0,00"
             defaultValue={editing ? amountInput.format(editing.amount) : undefined}
+            readOnly={locked}
             required
             className="font-mono"
           />
@@ -169,6 +176,7 @@ export function TransactionForm({
             name="occurredAt"
             type="date"
             defaultValue={editing?.occurredAt ?? today()}
+            readOnly={locked}
             required
           />
         </div>
@@ -183,6 +191,7 @@ export function TransactionForm({
             placeholder={type === 'income' ? 'Ex: Salário' : 'Ex: Almoço'}
             maxLength={120}
             defaultValue={editing?.description}
+            readOnly={locked}
             required
           />
         </div>
@@ -213,6 +222,7 @@ export function TransactionForm({
             name="method"
             defaultValue={editing?.method ?? 'pix'}
             items={METHODS}
+            disabled={locked}
           >
             <SelectTrigger id="method" className="w-full">
               <SelectValue />
@@ -235,6 +245,7 @@ export function TransactionForm({
             name="accountId"
             defaultValue={defaultAccountId}
             items={accountItems}
+            disabled={locked}
             required
           >
             <SelectTrigger id="accountId" className="w-full">
@@ -262,6 +273,7 @@ export function TransactionForm({
       {editing && (
         <p className="text-xs text-muted-foreground">
           Editando “{editing.description}”.{' '}
+          {locked && 'Importada do banco: só a categoria pode ser alterada. '}
           <Link
             href={doneHref}
             scroll={false}

@@ -402,3 +402,41 @@ export async function recentRuns(userId: string, limit = 15) {
     .orderBy(desc(syncRuns.startedAt))
     .limit(limit)
 }
+
+/**
+ * Reverse direction: a manual entry was created after the bank import.
+ * Suggests it on the best matching imported row (suggestion only).
+ */
+export async function suggestMatchForManual(userId: string, manualId: number) {
+  const [manual] = await db
+    .select()
+    .from(transactions)
+    .where(and(eq(transactions.id, manualId), eq(transactions.userId, userId), ne(transactions.source, 'bank')))
+  if (!manual) return false
+  const shift = (d: string, days: number) => new Date(Date.parse(`${d}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)
+  const imported = await db
+    .select()
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.userId, userId),
+        eq(transactions.source, 'bank'),
+        isNull(transactions.matchStatus),
+        eq(transactions.isTransfer, false),
+        eq(transactions.amount, manual.amount),
+        gte(transactions.occurredAt, shift(manual.occurredAt, -3)),
+        sql`${transactions.occurredAt} <= ${shift(manual.occurredAt, 3)}`,
+      ),
+    )
+  if (imported.length === 0) return false
+  const subject = (t: typeof manual) => ({
+    id: t.id, type: t.type, amountCents: toCents(t.amount), date: t.occurredAt, description: t.description, accountId: t.accountId,
+  })
+  const m = findMatch(subject(manual), imported.map(subject))
+  if (!m) return false
+  await db
+    .update(transactions)
+    .set({ matchCandidateId: manual.id, matchStatus: 'suggested' })
+    .where(and(eq(transactions.id, m.candidateId), eq(transactions.userId, userId), isNull(transactions.matchStatus)))
+  return true
+}

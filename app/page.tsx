@@ -47,6 +47,7 @@ export default async function Home({
         method: editingRow.method,
         occurredAt: editingRow.occurredAt,
         accountId: editingRow.accountId,
+        source: editingRow.source,
       }
     : null
   const accountOptions = balances.accounts.map(({ id, name, isManual }) => ({
@@ -64,14 +65,26 @@ export default async function Home({
     method: t.method,
     occurredAt: t.occurredAt,
     accountName: t.accountName,
+    source: t.source,
+    status: t.status,
+    categoryStatus: t.categoryStatus,
+    isTransfer: t.isTransfer,
+    recurring: t.recurring,
+    merchant: t.merchant,
+    matchStatus: t.matchStatus,
+    duplicateOf: t.duplicateOf,
+    matchCandidate: t.matchCandidate,
   }))
+  // Transfers (card bill payments, own-account moves) and manual rows the
+  // user confirmed as duplicates of imported ones are not income/expense.
+  const counted = monthTransactions.filter((t) => !t.isTransfer && t.duplicateOf === null)
 
   // Sum in integer cents to avoid floating-point drift.
   const income = fromCents(
-    sumCents(monthTransactions.filter((t) => t.type === 'income').map((t) => t.amount)),
+    sumCents(counted.filter((t) => t.type === 'income').map((t) => t.amount)),
   )
   const expense = fromCents(
-    sumCents(monthTransactions.filter((t) => t.type === 'expense').map((t) => t.amount)),
+    sumCents(counted.filter((t) => t.type === 'expense').map((t) => t.amount)),
   )
 
   return (

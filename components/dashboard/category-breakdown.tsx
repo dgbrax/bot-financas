@@ -11,7 +11,7 @@ export function CategoryBreakdown({
 }) {
   const byCategory = new Map<string, number>()
   for (const t of items) {
-    if (t.type !== 'expense') continue
+    if (t.type !== 'expense' || t.isTransfer || t.duplicateOf !== null) continue
     byCategory.set(t.category, (byCategory.get(t.category) ?? 0) + toCents(t.amount))
   }
   const rows = [...byCategory.entries()]

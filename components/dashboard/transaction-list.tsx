@@ -2,8 +2,15 @@
 
 import Link from 'next/link'
 import { useMemo, useState, useTransition } from 'react'
-import { Pencil, Search, Trash2 } from 'lucide-react'
-import { deleteTransaction } from '@/app/actions/transactions'
+import { Check, Pencil, Search, Trash2 } from 'lucide-react'
+import {
+  acceptCategory,
+  confirmMatch,
+  deleteTransaction,
+  dismissMatch,
+  undoMatch,
+} from '@/app/actions/transactions'
+import { channelLabel } from '@/lib/bank/classify'
 import { formatBRL, formatDay, methodLabel } from '@/lib/finance'
 import { Input } from '@/components/ui/input'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -18,15 +25,45 @@ export type StatementItem = {
   method: string
   occurredAt: string
   accountName: string | null
+  source: string
+  status: 'posted' | 'pending'
+  categoryStatus: 'confirmed' | 'suggested' | 'review'
+  isTransfer: boolean
+  recurring: boolean
+  merchant: string | null
+  matchStatus: 'suggested' | 'confirmed' | 'dismissed' | null
+  duplicateOf: number | null
+  matchCandidate: { id: number; description: string; occurredAt: string } | null
 }
 
-type Filter = 'all' | 'income' | 'expense'
+type Filter = 'all' | 'income' | 'expense' | 'review'
 
 const FILTERS: [Filter, string][] = [
   ['all', 'Tudo'],
   ['income', 'Entradas'],
   ['expense', 'Saídas'],
+  ['review', 'Revisar'],
 ]
+
+export function needsReview(t: StatementItem) {
+  return t.categoryStatus === 'review' || t.matchStatus === 'suggested'
+}
+
+function Badge({ children, tone = 'muted', title }: { children: React.ReactNode; tone?: 'muted' | 'warn' | 'info'; title?: string }) {
+  return (
+    <span
+      title={title}
+      className={cn(
+        'rounded px-1.5 py-0.5 text-[10px] leading-none font-medium whitespace-nowrap',
+        tone === 'muted' && 'bg-muted text-muted-foreground',
+        tone === 'warn' && 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
+        tone === 'info' && 'bg-primary/10 text-primary',
+      )}
+    >
+      {children}
+    </span>
+  )
+}
 
 export function TransactionList({
   items,
@@ -42,26 +79,34 @@ export function TransactionList({
   const [pendingId, setPendingId] = useState<number | null>(null)
   const [, startTransition] = useTransition()
 
+  const reviewCount = items.filter(needsReview).length
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
     return items.filter(
       (t) =>
-        (filter === 'all' || t.type === filter) &&
+        (filter === 'all' ||
+          (filter === 'review' ? needsReview(t) : t.type === filter)) &&
         (!q ||
           t.description.toLowerCase().includes(q) ||
-          t.category.toLowerCase().includes(q)),
+          t.category.toLowerCase().includes(q) ||
+          (t.merchant ?? '').toLowerCase().includes(q)),
     )
   }, [items, filter, query])
+
+  function run(id: number, action: () => Promise<void>) {
+    setPendingId(id)
+    startTransition(async () => {
+      await action()
+      setPendingId(null)
+    })
+  }
 
   function onDelete(id: number, description: string) {
     if (!window.confirm(`Excluir "${description}"? Essa ação não pode ser desfeita.`)) {
       return
     }
-    setPendingId(id)
-    startTransition(async () => {
-      await deleteTransaction(id)
-      setPendingId(null)
-    })
+    run(id, () => deleteTransaction(id))
   }
 
   return (
@@ -93,11 +138,12 @@ export function TransactionList({
                 aria-pressed={filter === value}
                 onClick={() => setFilter(value)}
                 className={cn(
-                  'rounded-md px-2.5 py-1 font-medium text-muted-foreground transition-colors',
+                  'rounded-md px-2 py-1 font-medium text-muted-foreground transition-colors sm:px-2.5',
                   filter === value && 'bg-background text-foreground shadow-sm',
                 )}
               >
                 {label}
+                {value === 'review' && reviewCount > 0 && ` (${reviewCount})`}
               </button>
             ))}
           </div>
@@ -107,62 +153,126 @@ export function TransactionList({
       {visible.length === 0 ? (
         <p className="rounded-xl border border-dashed px-4 py-10 text-center text-sm text-muted-foreground">
           {items.length === 0
-            ? 'Nenhuma transação neste mês. Registre a primeira acima.'
-            : 'Nada encontrado com esse filtro.'}
+            ? 'Nenhuma transação neste mês. Registre a primeira acima ou conecte um banco.'
+            : filter === 'review'
+              ? 'Nada para revisar neste mês.'
+              : 'Nada encontrado com esse filtro.'}
         </p>
       ) : (
         <ul className="flex flex-col divide-y border-y">
-          {visible.map((t) => (
-            <li
-              key={t.id}
-              className={cn(
-                'group flex items-center gap-3 py-3 sm:gap-4',
-                pendingId === t.id && 'opacity-40',
-                editingId === t.id && 'bg-primary/5',
-              )}
-            >
-              <span className="w-16 shrink-0 font-mono text-xs whitespace-nowrap text-muted-foreground">
-                {formatDay(t.occurredAt)}
-              </span>
-              <div className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-sm">{t.description}</span>
-                <span className="text-xs text-muted-foreground">
-                  {t.category} · {methodLabel(t.method)}
-                  {t.accountName && ` · ${t.accountName}`}
-                </span>
-              </div>
-              <span
+          {visible.map((t) => {
+            const imported = t.source === 'bank'
+            const channel = channelLabel(t.method, t.type)
+            const isDuplicate = t.duplicateOf !== null
+            return (
+              <li
+                key={t.id}
+                aria-label={t.description}
                 className={cn(
-                  'font-mono text-sm',
-                  t.type === 'income' ? 'text-income' : 'text-foreground',
+                  'group flex flex-col gap-2 py-3',
+                  pendingId === t.id && 'opacity-40',
+                  editingId === t.id && 'bg-primary/5',
                 )}
               >
-                {t.type === 'income' ? '+' : '-'}
-                {formatBRL(t.amount)}
-              </span>
-              <Link
-                href={`/?mes=${month}&editar=${t.id}#transaction-form`}
-                aria-label={`Editar ${t.description}`}
-                className={cn(
-                  buttonVariants({ variant: 'ghost', size: 'icon' }),
-                  'size-8 text-muted-foreground opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100',
-                  editingId === t.id && 'md:opacity-100',
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <span className="w-16 shrink-0 font-mono text-xs whitespace-nowrap text-muted-foreground">
+                    {formatDay(t.occurredAt)}
+                  </span>
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className={cn('truncate text-sm', isDuplicate && 'text-muted-foreground line-through')}>
+                      {t.description}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {t.category}
+                      {imported ? (channel ? ` · ${channel}` : '') : ` · ${methodLabel(t.method)}`}
+                      {t.accountName && ` · ${t.accountName}`}
+                    </span>
+                    <span className="flex flex-wrap gap-1">
+                      {imported && <Badge tone="info" title="Importada do banco via Pluggy">Banco</Badge>}
+                      {t.status === 'pending' && <Badge tone="warn">Pendente</Badge>}
+                      {t.isTransfer && <Badge title="Movimentação entre suas contas; não entra em entradas/saídas">Transferência</Badge>}
+                      {t.recurring && <Badge>Recorrente</Badge>}
+                      {t.categoryStatus === 'review' && <Badge tone="warn" title="Categoria automática incerta">Revisar categoria</Badge>}
+                      {isDuplicate && <Badge title="Confirmada como a mesma transação importada do banco; não conta nos totais">Duplicata</Badge>}
+                    </span>
+                  </div>
+                  <span
+                    className={cn(
+                      'font-mono text-sm whitespace-nowrap',
+                      t.type === 'income' ? 'text-income' : 'text-foreground',
+                      (t.isTransfer || isDuplicate) && 'text-muted-foreground',
+                    )}
+                  >
+                    {t.type === 'income' ? '+' : '-'}
+                    {formatBRL(t.amount)}
+                  </span>
+                  {imported && t.categoryStatus !== 'confirmed' && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-8 text-muted-foreground hover:text-income"
+                      onClick={() => run(t.id, () => acceptCategory(t.id))}
+                      disabled={pendingId === t.id}
+                      aria-label={`Categoria ok: ${t.description}`}
+                      title={`Manter "${t.category}"`}
+                    >
+                      <Check className="size-4" />
+                    </Button>
+                  )}
+                  <Link
+                    href={`/?mes=${month}&editar=${t.id}#transaction-form`}
+                    aria-label={`Editar ${t.description}`}
+                    className={cn(
+                      buttonVariants({ variant: 'ghost', size: 'icon' }),
+                      'size-8 text-muted-foreground opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100',
+                      (editingId === t.id || (imported && t.categoryStatus !== 'confirmed')) && 'md:opacity-100',
+                    )}
+                  >
+                    <Pencil className="size-4" />
+                  </Link>
+                  {!imported && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="-ml-2 size-8 text-muted-foreground opacity-100 hover:text-destructive sm:-ml-3 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                      onClick={() => onDelete(t.id, t.description)}
+                      disabled={pendingId === t.id}
+                      aria-label={`Excluir ${t.description}`}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  )}
+                </div>
+
+                {imported && t.matchStatus === 'suggested' && t.matchCandidate && (
+                  <div
+                    role="group"
+                    aria-label={`Possível duplicata de ${t.matchCandidate.description}`}
+                    className="ml-0 flex flex-wrap items-center gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-xs sm:ml-20"
+                  >
+                    <span className="min-w-0 flex-1">
+                      Parece ser o lançamento manual “{t.matchCandidate.description}” de{' '}
+                      {formatDay(t.matchCandidate.occurredAt)}. É a mesma transação?
+                    </span>
+                    <Button size="sm" variant="outline" onClick={() => run(t.id, () => confirmMatch(t.id))} disabled={pendingId === t.id}>
+                      É a mesma
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => run(t.id, () => dismissMatch(t.id))} disabled={pendingId === t.id}>
+                      São diferentes
+                    </Button>
+                  </div>
                 )}
-              >
-                <Pencil className="size-4" />
-              </Link>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="-ml-2 size-8 text-muted-foreground opacity-100 hover:text-destructive sm:-ml-3 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
-                onClick={() => onDelete(t.id, t.description)}
-                disabled={pendingId === t.id}
-                aria-label={`Excluir ${t.description}`}
-              >
-                <Trash2 className="size-4" />
-              </Button>
-            </li>
-          ))}
+                {isDuplicate && (
+                  <div className="ml-0 flex items-center gap-2 text-xs text-muted-foreground sm:ml-20">
+                    Mantida como histórico; não conta nos totais.
+                    <Button size="sm" variant="ghost" onClick={() => run(t.id, () => undoMatch(t.id))} disabled={pendingId === t.id}>
+                      Desfazer
+                    </Button>
+                  </div>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
     </section>
