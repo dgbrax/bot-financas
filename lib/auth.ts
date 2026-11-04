@@ -1,5 +1,6 @@
 import { betterAuth } from 'better-auth'
 import { pool } from '@/lib/db'
+import { ensureDefaultAccounts } from '@/lib/accounts'
 
 export const auth = betterAuth({
   database: pool,
@@ -35,6 +36,20 @@ export const auth = betterAuth({
         ]
       : []),
   ],
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user) => {
+          // Don't fail sign-up over this; the dashboard re-runs it if missing.
+          try {
+            await ensureDefaultAccounts(user.id)
+          } catch (err) {
+            console.error('ensureDefaultAccounts failed', err)
+          }
+        },
+      },
+    },
+  },
   session: {
     expiresIn: 60 * 60 * 24 * 7,
     updateAge: 60 * 60 * 24,
