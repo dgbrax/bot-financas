@@ -74,6 +74,7 @@ Environment variables (Project → Settings → Environment Variables):
 | Variable | Value | Environments |
 |---|---|---|
 | `DATABASE_URL` | Neon TEST branch, **pooled** endpoint (`-pooler`), `sslmode=verify-full` | Production, Preview |
+| `APP_DATABASE_URL` | Same TEST URL. Takes precedence over `DATABASE_URL`; needed when the Neon integration manages `DATABASE_URL` and points it at a branch without the migrations | Preview (branch `integracoes`) |
 | `BETTER_AUTH_SECRET` | new random value (`openssl rand -base64 32`), not the local one | Production, Preview |
 | `BETTER_AUTH_URL` | `https://<project>.vercel.app` — Production only; leave unset on Preview (the app falls back to the deployment URL) | Production |
 | `PLUGGY_CLIENT_ID` / `PLUGGY_CLIENT_SECRET` | Pluggy application credentials (Sandbox/demo) | Production, Preview |
