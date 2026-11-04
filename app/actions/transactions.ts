@@ -5,7 +5,8 @@ import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { transactions } from '@/lib/db/schema'
+import { bankAccounts, transactions } from '@/lib/db/schema'
+import { ensureDefaultAccounts, MANUAL_ACCOUNT_NAME } from '@/lib/accounts'
 import {
   EXPENSE_CATEGORIES,
   INCOME_CATEGORIES,
@@ -18,6 +19,25 @@ async function getUserId() {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) throw new Error('Unauthorized')
   return session.user.id
+}
+
+async function selectAccounts(userId: string) {
+  return db
+    .select({ id: bankAccounts.id, name: bankAccounts.name })
+    .from(bankAccounts)
+    .where(eq(bankAccounts.userId, userId))
+    .orderBy(bankAccounts.id)
+}
+
+export async function getAccounts() {
+  const userId = await getUserId()
+  let rows = await selectAccounts(userId)
+  if (rows.length === 0) {
+    // Fallback if the sign-up hook failed or the user predates the seed.
+    await ensureDefaultAccounts(userId)
+    rows = await selectAccounts(userId)
+  }
+  return rows.map((a) => ({ ...a, isManual: a.name === MANUAL_ACCOUNT_NAME }))
 }
 
 export async function getMonthTransactions(monthKey: string) {
@@ -98,6 +118,7 @@ export async function addTransaction(
   const category = String(formData.get('category') ?? '')
   const method = String(formData.get('method') ?? 'pix')
   const occurredAt = String(formData.get('occurredAt') ?? '')
+  const accountId = Number(formData.get('accountId'))
 
   if (type !== 'income' && type !== 'expense') {
     return { error: 'Tipo inválido.' }
@@ -119,9 +140,21 @@ export async function addTransaction(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(occurredAt)) {
     return { error: 'Data inválida.' }
   }
+  if (!Number.isInteger(accountId) || accountId <= 0) {
+    return { error: 'Escolha uma conta.' }
+  }
+  const [account] = await db
+    .select({ id: bankAccounts.id })
+    .from(bankAccounts)
+    .where(and(eq(bankAccounts.id, accountId), eq(bankAccounts.userId, userId)))
+  if (!account) {
+    return { error: 'Conta inválida.' }
+  }
 
   await db.insert(transactions).values({
     userId,
+    accountId,
+    source: 'manual',
     type,
     amount: amount.toFixed(2),
     description,

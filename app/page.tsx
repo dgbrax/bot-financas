@@ -2,6 +2,7 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import {
+  getAccounts,
   getMonthTransactions,
   getMonthlyFlow,
   getOverallBalance,
@@ -26,10 +27,11 @@ export default async function Home({
   const { mes } = await searchParams
   const month = isValidMonthKey(mes) ? mes : currentMonthKey()
 
-  const [monthTransactions, balance, flow] = await Promise.all([
+  const [monthTransactions, balance, flow, accounts] = await Promise.all([
     getMonthTransactions(month),
     getOverallBalance(),
     getMonthlyFlow(month),
+    getAccounts(),
   ])
 
   const items = monthTransactions.map((t) => ({
@@ -62,7 +64,7 @@ export default async function Home({
           <MonthNav month={month} />
         </div>
 
-        <TransactionForm />
+        <TransactionForm accounts={accounts} />
 
         <div className="grid gap-10 md:grid-cols-2">
           <CategoryBreakdown items={items} total={expense} />

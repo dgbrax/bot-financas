@@ -25,7 +25,16 @@ function today() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export function TransactionForm() {
+export type AccountOption = { id: number; name: string; isManual: boolean }
+
+export function TransactionForm({ accounts }: { accounts: AccountOption[] }) {
+  const defaultAccountId = String(
+    (accounts.find((a) => a.isManual) ?? accounts[0])?.id ?? '',
+  )
+  const accountItems = accounts.map((a) => ({
+    value: String(a.id),
+    label: a.name,
+  }))
   const [type, setType] = useState<TransactionType>('expense')
   const [formKey, setFormKey] = useState(0)
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
@@ -85,7 +94,7 @@ export function TransactionForm() {
       <form
         key={`${type}-${formKey}`}
         action={formAction}
-        className="grid grid-cols-2 gap-3 md:grid-cols-12 md:items-end"
+        className="grid grid-cols-2 gap-3 md:grid-cols-14 md:items-end"
       >
         <input type="hidden" name="type" value={type} />
 
@@ -160,6 +169,29 @@ export function TransactionForm() {
               {METHODS.map((m) => (
                 <SelectItem key={m.value} value={m.value}>
                   {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="col-span-2 flex flex-col gap-1.5 md:col-span-2">
+          <Label htmlFor="accountId" className="text-xs text-muted-foreground">
+            Conta
+          </Label>
+          <Select
+            name="accountId"
+            defaultValue={defaultAccountId}
+            items={accountItems}
+            required
+          >
+            <SelectTrigger id="accountId" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {accountItems.map((a) => (
+                <SelectItem key={a.value} value={a.value}>
+                  {a.label}
                 </SelectItem>
               ))}
             </SelectContent>
