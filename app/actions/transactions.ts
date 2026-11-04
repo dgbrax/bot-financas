@@ -1,13 +1,12 @@
 'use server'
 
 import { and, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm'
-import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { auth } from '@/lib/auth'
+import { getUserId } from '@/lib/session'
 import { db } from '@/lib/db'
 import { bankAccounts, transactions } from '@/lib/db/schema'
-import { ensureDefaultAccounts, MANUAL_ACCOUNT_NAME } from '@/lib/accounts'
+import { ensureDefaultAccounts } from '@/lib/accounts'
 import { centsToDecimal, fromCents, parseAmount, toCents } from '@/lib/money'
 import {
   EXPENSE_CATEGORIES,
@@ -18,11 +17,6 @@ import {
   shiftMonth,
 } from '@/lib/finance'
 
-async function getUserId() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) throw new Error('Unauthorized')
-  return session.user.id
-}
 
 const signedAmount = sql`case when ${transactions.type} = 'income' then ${transactions.amount} else -${transactions.amount} end`
 
@@ -74,7 +68,8 @@ export async function getAccountBalances() {
     id: r.id,
     name: r.name,
     bank: r.bank,
-    isManual: r.name === MANUAL_ACCOUNT_NAME,
+    // Default account for manual entries (survives renaming "Carteira").
+    isManual: r.bank === 'manual',
     balanceAt: r.balanceAt ? r.balanceAt.toISOString() : null,
     balanceCents: toCents(r.snapshot) + toCents(r.net),
   }))
