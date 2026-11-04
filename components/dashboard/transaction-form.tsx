@@ -161,7 +161,7 @@ export function TransactionForm({ accounts }: { accounts: AccountOption[] }) {
           <Label htmlFor="method" className="text-xs text-muted-foreground">
             Forma
           </Label>
-          <Select name="method" defaultValue="pix">
+          <Select name="method" defaultValue="pix" items={METHODS}>
             <SelectTrigger id="method" className="w-full">
               <SelectValue />
             </SelectTrigger>
