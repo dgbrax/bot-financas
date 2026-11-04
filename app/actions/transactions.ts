@@ -3,6 +3,7 @@
 import { and, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { bankAccounts, transactions } from '@/lib/db/schema'
@@ -11,6 +12,7 @@ import { centsToDecimal, fromCents, parseAmount, toCents } from '@/lib/money'
 import {
   EXPENSE_CATEGORIES,
   INCOME_CATEGORIES,
+  isValidISODate,
   METHOD_VALUES,
   monthRange,
   shiftMonth,
@@ -95,8 +97,18 @@ export async function getMonthTransactions(monthKey: string) {
   const userId = await getUserId()
   const { start, end } = monthRange(monthKey)
   return db
-    .select()
+    .select({
+      id: transactions.id,
+      type: transactions.type,
+      amount: transactions.amount,
+      description: transactions.description,
+      category: transactions.category,
+      method: transactions.method,
+      occurredAt: transactions.occurredAt,
+      accountName: bankAccounts.name,
+    })
     .from(transactions)
+    .leftJoin(bankAccounts, eq(bankAccounts.id, transactions.accountId))
     .where(
       and(
         eq(transactions.userId, userId),
@@ -143,12 +155,21 @@ export async function getMonthlyFlow(monthKey: string, months = 6) {
 
 export type ActionState = { error?: string; ok?: boolean }
 
-export async function addTransaction(
-  _prev: ActionState,
-  formData: FormData,
-): Promise<ActionState> {
-  const userId = await getUserId()
+type TransactionInput = {
+  accountId: number
+  type: 'income' | 'expense'
+  amount: string
+  description: string
+  category: string
+  method: string
+  occurredAt: string
+}
 
+/** Validates the transaction form. Also checks the account belongs to the user. */
+async function readTransactionForm(
+  userId: string,
+  formData: FormData,
+): Promise<{ data: TransactionInput } | { error: string }> {
   const type = String(formData.get('type') ?? '')
   const amount = parseAmount(String(formData.get('amount') ?? ''))
   const description = String(formData.get('description') ?? '').trim()
@@ -161,7 +182,7 @@ export async function addTransaction(
     return { error: 'Tipo inválido.' }
   }
   if (amount === null || amount <= 0 || amount > 1_000_000_000) {
-    return { error: 'Informe um valor válido.' }
+    return { error: 'Informe um valor válido (ex: 12,50).' }
   }
   if (!description || description.length > 120) {
     return { error: 'Descrição obrigatória (até 120 caracteres).' }
@@ -174,7 +195,7 @@ export async function addTransaction(
   if (!METHOD_VALUES.includes(method)) {
     return { error: 'Forma de pagamento inválida.' }
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(occurredAt)) {
+  if (!isValidISODate(occurredAt)) {
     return { error: 'Data inválida.' }
   }
   if (!Number.isInteger(accountId) || accountId <= 0) {
@@ -188,20 +209,59 @@ export async function addTransaction(
     return { error: 'Conta inválida.' }
   }
 
-  await db.insert(transactions).values({
-    userId,
-    accountId,
-    source: 'manual',
-    type,
-    amount: centsToDecimal(toCents(amount)),
-    description,
-    category,
-    method,
-    occurredAt,
-  })
+  return {
+    data: {
+      accountId,
+      type,
+      amount: centsToDecimal(toCents(amount)),
+      description,
+      category,
+      method,
+      occurredAt,
+    },
+  }
+}
+
+/** Creates a transaction, or updates one when the form carries an `id`. */
+export async function saveTransaction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const userId = await getUserId()
+  const parsed = await readTransactionForm(userId, formData)
+  if ('error' in parsed) return parsed
+
+  const rawId = formData.get('id')
+  if (rawId) {
+    const id = Number(rawId)
+    if (!Number.isInteger(id) || id <= 0) return { error: 'Transação inválida.' }
+    const updated = await db
+      .update(transactions)
+      .set(parsed.data)
+      .where(and(eq(transactions.id, id), eq(transactions.userId, userId)))
+      .returning({ id: transactions.id })
+    if (updated.length === 0) return { error: 'Transação não encontrada.' }
+    revalidatePath('/')
+    // Leave edit mode. Only same-app dashboard URLs are allowed (no open redirect).
+    const returnTo = String(formData.get('returnTo') ?? '')
+    redirect(/^\/\?mes=\d{4}-(0[1-9]|1[0-2])$/.test(returnTo) ? returnTo : '/')
+  } else {
+    await db
+      .insert(transactions)
+      .values({ userId, source: 'manual', ...parsed.data })
+  }
 
   revalidatePath('/')
   return { ok: true }
+}
+
+export async function getTransaction(id: number) {
+  const userId = await getUserId()
+  const [row] = await db
+    .select()
+    .from(transactions)
+    .where(and(eq(transactions.id, id), eq(transactions.userId, userId)))
+  return row ?? null
 }
 
 export async function deleteTransaction(id: number) {

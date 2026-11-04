@@ -5,6 +5,7 @@ import {
   getAccountBalances,
   getMonthTransactions,
   getMonthlyFlow,
+  getTransaction,
 } from '@/app/actions/transactions'
 import { currentMonthKey, isValidMonthKey } from '@/lib/finance'
 import { fromCents, sumCents } from '@/lib/money'
@@ -20,19 +21,34 @@ import { MonthNav } from '@/components/dashboard/month-nav'
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string }>
+  searchParams: Promise<{ mes?: string; editar?: string }>
 }) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) redirect('/sign-in')
 
-  const { mes } = await searchParams
+  const { mes, editar } = await searchParams
   const month = isValidMonthKey(mes) ? mes : currentMonthKey()
+  const editId = editar && /^\d+$/.test(editar) ? Number(editar) : null
 
-  const [monthTransactions, balances, flow] = await Promise.all([
+  const [monthTransactions, balances, flow, editingRow] = await Promise.all([
     getMonthTransactions(month),
     getAccountBalances(),
     getMonthlyFlow(month),
+    editId ? getTransaction(editId) : null,
   ])
+  // getTransaction only returns the user's own rows; anything else is ignored.
+  const editing = editingRow
+    ? {
+        id: editingRow.id,
+        type: editingRow.type,
+        amount: Number(editingRow.amount),
+        description: editingRow.description,
+        category: editingRow.category,
+        method: editingRow.method,
+        occurredAt: editingRow.occurredAt,
+        accountId: editingRow.accountId,
+      }
+    : null
   const accountOptions = balances.accounts.map(({ id, name, isManual }) => ({
     id,
     name,
@@ -47,6 +63,7 @@ export default async function Home({
     category: t.category,
     method: t.method,
     occurredAt: t.occurredAt,
+    accountName: t.accountName,
   }))
 
   // Sum in integer cents to avoid floating-point drift.
@@ -75,14 +92,25 @@ export default async function Home({
           unassigned={balances.unassigned}
         />
 
-        <TransactionForm accounts={accountOptions} />
+        <TransactionForm
+          // Remount when the edited data changes (e.g. after saving) so the
+          // uncontrolled inputs pick up new defaults.
+          key={editing ? JSON.stringify(editing) : 'new'}
+          accounts={accountOptions}
+          editing={editing}
+          doneHref={`/?mes=${month}`}
+        />
 
         <div className="grid gap-10 md:grid-cols-2">
           <CategoryBreakdown items={items} total={expense} />
           <MonthlyFlow data={flow} activeMonth={month} />
         </div>
 
-        <TransactionList items={items} />
+        <TransactionList
+          items={items}
+          month={month}
+          editingId={editing?.id ?? null}
+        />
       </main>
     </div>
   )

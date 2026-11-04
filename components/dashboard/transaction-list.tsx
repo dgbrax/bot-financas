@@ -1,11 +1,12 @@
 'use client'
 
+import Link from 'next/link'
 import { useMemo, useState, useTransition } from 'react'
-import { Search, Trash2 } from 'lucide-react'
+import { Pencil, Search, Trash2 } from 'lucide-react'
 import { deleteTransaction } from '@/app/actions/transactions'
 import { formatBRL, formatDay, methodLabel } from '@/lib/finance'
 import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export type StatementItem = {
@@ -16,6 +17,7 @@ export type StatementItem = {
   category: string
   method: string
   occurredAt: string
+  accountName: string | null
 }
 
 type Filter = 'all' | 'income' | 'expense'
@@ -26,7 +28,15 @@ const FILTERS: [Filter, string][] = [
   ['expense', 'Saídas'],
 ]
 
-export function TransactionList({ items }: { items: StatementItem[] }) {
+export function TransactionList({
+  items,
+  month,
+  editingId = null,
+}: {
+  items: StatementItem[]
+  month: string
+  editingId?: number | null
+}) {
   const [filter, setFilter] = useState<Filter>('all')
   const [query, setQuery] = useState('')
   const [pendingId, setPendingId] = useState<number | null>(null)
@@ -43,7 +53,10 @@ export function TransactionList({ items }: { items: StatementItem[] }) {
     )
   }, [items, filter, query])
 
-  function onDelete(id: number) {
+  function onDelete(id: number, description: string) {
+    if (!window.confirm(`Excluir "${description}"? Essa ação não pode ser desfeita.`)) {
+      return
+    }
     setPendingId(id)
     startTransition(async () => {
       await deleteTransaction(id)
@@ -103,17 +116,19 @@ export function TransactionList({ items }: { items: StatementItem[] }) {
             <li
               key={t.id}
               className={cn(
-                'group flex items-center gap-4 py-3',
+                'group flex items-center gap-3 py-3 sm:gap-4',
                 pendingId === t.id && 'opacity-40',
+                editingId === t.id && 'bg-primary/5',
               )}
             >
-              <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">
+              <span className="w-16 shrink-0 font-mono text-xs whitespace-nowrap text-muted-foreground">
                 {formatDay(t.occurredAt)}
               </span>
               <div className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-sm">{t.description}</span>
                 <span className="text-xs text-muted-foreground">
                   {t.category} · {methodLabel(t.method)}
+                  {t.accountName && ` · ${t.accountName}`}
                 </span>
               </div>
               <span
@@ -125,11 +140,22 @@ export function TransactionList({ items }: { items: StatementItem[] }) {
                 {t.type === 'income' ? '+' : '-'}
                 {formatBRL(t.amount)}
               </span>
+              <Link
+                href={`/?mes=${month}&editar=${t.id}#transaction-form`}
+                aria-label={`Editar ${t.description}`}
+                className={cn(
+                  buttonVariants({ variant: 'ghost', size: 'icon' }),
+                  'size-8 text-muted-foreground opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100',
+                  editingId === t.id && 'md:opacity-100',
+                )}
+              >
+                <Pencil className="size-4" />
+              </Link>
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-8 text-muted-foreground opacity-100 hover:text-destructive md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
-                onClick={() => onDelete(t.id)}
+                className="-ml-2 size-8 text-muted-foreground opacity-100 hover:text-destructive sm:-ml-3 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                onClick={() => onDelete(t.id, t.description)}
                 disabled={pendingId === t.id}
                 aria-label={`Excluir ${t.description}`}
               >
