@@ -7,6 +7,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { bankAccounts, transactions } from '@/lib/db/schema'
 import { ensureDefaultAccounts, MANUAL_ACCOUNT_NAME } from '@/lib/accounts'
+import { centsToDecimal, fromCents, parseAmount, toCents } from '@/lib/money'
 import {
   EXPENSE_CATEGORIES,
   INCOME_CATEGORIES,
@@ -73,14 +74,21 @@ export async function getAccountBalances() {
     bank: r.bank,
     isManual: r.name === MANUAL_ACCOUNT_NAME,
     balanceAt: r.balanceAt ? r.balanceAt.toISOString() : null,
-    balance: Number(r.snapshot) + Number(r.net),
+    balanceCents: toCents(r.snapshot) + toCents(r.net),
   }))
-  const unassigned =
-    unassignedRow && unassignedRow.count > 0 ? Number(unassignedRow.net) : null
-  const total =
-    accounts.reduce((s, a) => s + a.balance, 0) + (unassigned ?? 0)
+  const unassignedCents =
+    unassignedRow && unassignedRow.count > 0 ? toCents(unassignedRow.net) : null
+  const totalCents =
+    accounts.reduce((s, a) => s + a.balanceCents, 0) + (unassignedCents ?? 0)
 
-  return { accounts, unassigned, total }
+  return {
+    accounts: accounts.map(({ balanceCents, ...a }) => ({
+      ...a,
+      balance: fromCents(balanceCents),
+    })),
+    unassigned: unassignedCents === null ? null : fromCents(unassignedCents),
+    total: fromCents(totalCents),
+  }
 }
 
 export async function getMonthTransactions(monthKey: string) {
@@ -142,10 +150,7 @@ export async function addTransaction(
   const userId = await getUserId()
 
   const type = String(formData.get('type') ?? '')
-  const rawAmount = String(formData.get('amount') ?? '')
-    .replace(/\./g, '')
-    .replace(',', '.')
-  const amount = Number(rawAmount)
+  const amount = parseAmount(String(formData.get('amount') ?? ''))
   const description = String(formData.get('description') ?? '').trim()
   const category = String(formData.get('category') ?? '')
   const method = String(formData.get('method') ?? 'pix')
@@ -155,7 +160,7 @@ export async function addTransaction(
   if (type !== 'income' && type !== 'expense') {
     return { error: 'Tipo inválido.' }
   }
-  if (!Number.isFinite(amount) || amount <= 0 || amount > 1_000_000_000) {
+  if (amount === null || amount <= 0 || amount > 1_000_000_000) {
     return { error: 'Informe um valor válido.' }
   }
   if (!description || description.length > 120) {
@@ -188,7 +193,7 @@ export async function addTransaction(
     accountId,
     source: 'manual',
     type,
-    amount: amount.toFixed(2),
+    amount: centsToDecimal(toCents(amount)),
     description,
     category,
     method,

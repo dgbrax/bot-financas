@@ -1,4 +1,5 @@
 import { formatBRL } from '@/lib/finance'
+import { fromCents, toCents } from '@/lib/money'
 import type { StatementItem } from './transaction-list'
 
 export function CategoryBreakdown({
@@ -11,9 +12,11 @@ export function CategoryBreakdown({
   const byCategory = new Map<string, number>()
   for (const t of items) {
     if (t.type !== 'expense') continue
-    byCategory.set(t.category, (byCategory.get(t.category) ?? 0) + t.amount)
+    byCategory.set(t.category, (byCategory.get(t.category) ?? 0) + toCents(t.amount))
   }
-  const rows = [...byCategory.entries()].sort((a, b) => b[1] - a[1])
+  const rows = [...byCategory.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([category, cents]) => [category, fromCents(cents)] as const)
 
   return (
     <section aria-labelledby="by-category" className="flex flex-col gap-4">

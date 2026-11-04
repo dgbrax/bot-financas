@@ -7,6 +7,7 @@ import {
   getMonthlyFlow,
 } from '@/app/actions/transactions'
 import { currentMonthKey, isValidMonthKey } from '@/lib/finance'
+import { fromCents, sumCents } from '@/lib/money'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { BalanceSummary } from '@/components/dashboard/balance-summary'
 import { AccountBalances } from '@/components/dashboard/account-balances'
@@ -48,12 +49,13 @@ export default async function Home({
     occurredAt: t.occurredAt,
   }))
 
-  const income = items
-    .filter((t) => t.type === 'income')
-    .reduce((s, t) => s + t.amount, 0)
-  const expense = items
-    .filter((t) => t.type === 'expense')
-    .reduce((s, t) => s + t.amount, 0)
+  // Sum in integer cents to avoid floating-point drift.
+  const income = fromCents(
+    sumCents(monthTransactions.filter((t) => t.type === 'income').map((t) => t.amount)),
+  )
+  const expense = fromCents(
+    sumCents(monthTransactions.filter((t) => t.type === 'expense').map((t) => t.amount)),
+  )
 
   return (
     <div className="min-h-dvh">
