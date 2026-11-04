@@ -217,7 +217,7 @@ export const syncRuns = pgTable(
     itemId: integer('itemId')
       .notNull()
       .references(() => pluggyItems.id, { onDelete: 'cascade' }),
-    trigger: text('trigger').$type<'connect' | 'manual' | 'webhook'>().notNull(),
+    trigger: text('trigger').$type<'connect' | 'manual' | 'webhook' | 'cron'>().notNull(),
     status: text('status')
       .$type<'running' | 'success' | 'waiting' | 'error'>()
       .notNull(),

@@ -13,7 +13,7 @@ export type SyncRunView = {
   errorMessage: string | null
 }
 
-const TRIGGER: Record<string, string> = { connect: 'Conexão', manual: 'Manual', webhook: 'Automática (webhook)' }
+const TRIGGER: Record<string, string> = { connect: 'Conexão', manual: 'Manual', webhook: 'Automática (webhook)', cron: 'Automática (diária)' }
 const STATUS: Record<string, string> = { success: 'Concluída', waiting: 'Aguardando banco', error: 'Erro', running: 'Em andamento' }
 
 export function SyncHistory({ runs }: { runs: SyncRunView[] }) {

@@ -101,7 +101,7 @@ export type SyncResult = {
 export async function syncItem(
   userId: string,
   itemRowId: number,
-  trigger: 'connect' | 'manual' | 'webhook',
+  trigger: 'connect' | 'manual' | 'webhook' | 'cron',
   client: PluggyClient = pluggy(),
 ): Promise<SyncResult> {
   const empty = { accounts: 0, created: 0, updated: 0, removed: 0, matches: 0 }
