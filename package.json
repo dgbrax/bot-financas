@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "db:generate": "drizzle-kit generate",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:integration": "RUN_PLUGGY_IT=1 node --env-file=.env.local node_modules/vitest/vitest.mjs run lib/pluggy/sync.integration.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -21,6 +22,7 @@
     "lucide-react": "^1.16.0",
     "next": "16.4.3",
     "pg": "^8.23.1",
+    "pluggy-connect-sdk": "2.14.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "shadcn": "^4.11.0",
