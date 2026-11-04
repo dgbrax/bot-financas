@@ -256,3 +256,17 @@ export const webhookEvents = pgTable(
   },
   (t) => [uniqueIndex('webhook_events_event_uq').on(t.eventId)],
 )
+
+/**
+ * Per-user Pluggy application credentials, used only when the server has no
+ * PLUGGY_CLIENT_ID/SECRET. The secret is stored encrypted (lib/crypto.ts).
+ */
+export const pluggyCredentials = pgTable('pluggy_credentials', {
+  userId: text('userId')
+    .primaryKey()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  clientId: text('clientId').notNull(),
+  clientSecretEncrypted: text('clientSecretEncrypted').notNull(),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+})

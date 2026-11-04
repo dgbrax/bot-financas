@@ -36,6 +36,13 @@
       "when": 1793810810331,
       "tag": "0004_pluggy_integration",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793819640526,
+      "tag": "0005_pluggy_credentials",
+      "breakpoints": true
     }
   ]
 }

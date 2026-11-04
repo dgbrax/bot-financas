@@ -7,6 +7,8 @@ import { db } from '@/lib/db'
 import { pluggyItems } from '@/lib/db/schema'
 import { sandboxOnly } from '@/lib/pluggy/client'
 import { recentRuns } from '@/lib/pluggy/sync'
+import { credentialStatus } from '@/lib/pluggy/credentials'
+import { CredentialsForm, CredentialsSummary } from '@/components/connections/credentials-form'
 import { getAccountBalances } from '@/app/actions/transactions'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { ConnectButton } from '@/components/connections/connect-button'
@@ -29,7 +31,9 @@ export default async function ConnectionsPage() {
     getAccountBalances(),
     recentRuns(userId),
   ])
-  const configured = !!process.env.PLUGGY_CLIENT_ID && !!process.env.PLUGGY_CLIENT_SECRET
+  // Env credentials win; otherwise the user's own (stored encrypted).
+  const credentials = await credentialStatus(userId)
+  const configured = credentials.source !== 'none'
   const active = items.filter((i) => !i.disconnectedAt)
   const disconnected = items.filter((i) => i.disconnectedAt)
 
@@ -65,10 +69,9 @@ export default async function ConnectionsPage() {
           {configured && <ConnectButton />}
         </div>
 
-        {!configured && (
-          <p role="alert" className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-            Integração indisponível: defina PLUGGY_CLIENT_ID e PLUGGY_CLIENT_SECRET no servidor.
-          </p>
+        {!configured && <CredentialsForm />}
+        {credentials.source === 'user' && (
+          <CredentialsSummary clientIdMasked={credentials.clientIdMasked} updatedAt={credentials.updatedAt} />
         )}
         {configured && sandboxOnly() && (
           <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">

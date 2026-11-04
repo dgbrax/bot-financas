@@ -22,8 +22,10 @@ export async function POST(request: NextRequest) {
   const payload = parseWebhookPayload(await request.json().catch(() => null))
   if (!payload) return NextResponse.json({ error: 'invalid payload' }, { status: 400 })
 
-  // Filter (not authentication): events for another Pluggy client.
-  if (payload.clientId && payload.clientId !== process.env.PLUGGY_CLIENT_ID) {
+  // Filter (not authentication): events for another Pluggy client. With
+  // per-user credentials (no env client) the item lookup does the scoping.
+  const envClientId = process.env.PLUGGY_CLIENT_ID
+  if (envClientId && payload.clientId && payload.clientId !== envClientId) {
     return NextResponse.json({ ignored: true })
   }
 

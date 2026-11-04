@@ -46,6 +46,7 @@ DATABASE_URL=... pnpm db:generate   # writes SQL to ./drizzle (does not touch th
   - `0002_seed_default_accounts.sql`: default accounts (Inter, Santander, Carteira) for existing users and backfill of `transactions.accountId`. Idempotent.
   - `0003_account_id_not_null.sql`: `transactions.accountId` becomes NOT NULL. Before running, check `SELECT count(*) FROM transactions WHERE "accountId" IS NULL` returns 0.
   - `0004_pluggy_integration.sql`: Pluggy tables (`pluggy_items`, `sync_runs`, `webhook_events`) and import/classification/reconciliation columns on `bank_accounts` and `transactions`. Additive only.
+  - `0005_pluggy_credentials.sql`: per-user Pluggy credentials (encrypted secret). Must be applied before deploying code that has no `PLUGGY_*` env vars.
 - The existing database was created before drizzle-kit, so a few constraint names differ from the snapshots (e.g. `user_email_key` vs `user_email_unique`), and it has an index `transactions_user_date_idx` and CHECK constraints that `schema.ts` doesn't declare. Review generated SQL that touches those before applying it.
 
 ## Local development
@@ -61,6 +62,7 @@ corepack pnpm build          # production build, includes type checking
 ## Bank integration (Pluggy)
 
 - Connect banks at `/conexoes` with the Pluggy Connect widget. Credentials go to Pluggy; the app only stores the Item id, accounts and transactions.
+- Credentials: `PLUGGY_CLIENT_ID`/`PLUGGY_CLIENT_SECRET` on the server take precedence. Without them, each user can enter their own on `/conexoes`; they are validated with Pluggy and the secret is stored encrypted (AES-256-GCM, key from `CREDENTIALS_ENCRYPTION_KEY` or derived from `BETTER_AUTH_SECRET`) in `pluggy_credentials` (migration `0005`).
 - Sandbox-only by default (`PLUGGY_SANDBOX_ONLY`): the widget lists only test institutions and the server refuses real ones. Sandbox login: `user-ok` / `password-ok`, MFA `123456`.
 - Sync runs when a bank is connected, with the **Sincronizar** button, from the daily cron (`/api/cron/sync`) and, once registered, from Pluggy webhooks (`/api/webhooks/pluggy`, authenticated by the `x-webhook-secret` header). Webhooks require a public HTTPS URL and are **not registered** yet.
 - `corepack pnpm test:integration` runs the import flow against the Pluggy Sandbox and the database in `DATABASE_URL` (use a TEST branch).

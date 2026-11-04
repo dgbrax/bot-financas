@@ -8,7 +8,8 @@ import { findMatch } from '@/lib/bank/reconcile'
 import { db } from '@/lib/db'
 import { bankAccounts, pluggyItems, syncRuns, transactions } from '@/lib/db/schema'
 import { toCents } from '@/lib/money'
-import { PluggyApiError, pluggy, sandboxOnly, type PluggyClient } from './client'
+import { PluggyApiError, sandboxOnly, type PluggyClient } from './client'
+import { pluggyFor } from './credentials'
 import {
   accountBalanceDecimal,
   accountDisplayName,
@@ -61,8 +62,9 @@ function itemFields(item: PluggyItem) {
 export async function registerItem(
   userId: string,
   pluggyItemId: string,
-  client: PluggyClient = pluggy(),
+  pluggyClient?: PluggyClient,
 ) {
+  const client = pluggyClient ?? (await pluggyFor(userId))
   const item = await client.getItem(pluggyItemId)
   if (item.clientUserId !== userId) throw new PluggyOwnershipError()
   if (sandboxOnly() && !item.connector.isSandbox) {
@@ -102,7 +104,7 @@ export async function syncItem(
   userId: string,
   itemRowId: number,
   trigger: 'connect' | 'manual' | 'webhook' | 'cron',
-  client: PluggyClient = pluggy(),
+  pluggyClient?: PluggyClient,
 ): Promise<SyncResult> {
   const empty = { accounts: 0, created: 0, updated: 0, removed: 0, matches: 0 }
   const [row] = await db
@@ -152,6 +154,8 @@ export async function syncItem(
   }
 
   try {
+    // The item owner's credentials (env, or their own stored ones).
+    const client = pluggyClient ?? (await pluggyFor(userId))
     const item = await client.getItem(row.pluggyItemId)
     await db.update(pluggyItems).set(itemFields(item)).where(eq(pluggyItems.id, row.id))
 
