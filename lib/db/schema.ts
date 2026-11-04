@@ -6,7 +6,11 @@ import {
   serial,
   numeric,
   date,
+  integer,
+  index,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 
 // --- Better Auth required tables -------------------------------------------
 // Column names are camelCase to match Better Auth's defaults. Do not rename.
@@ -63,16 +67,58 @@ export const verification = pgTable('verification', {
 
 // --- App tables ------------------------------------------------------------
 
-export const transactions = pgTable('transactions', {
-  id: serial('id').primaryKey(),
-  userId: text('userId').notNull(),
-  type: text('type').$type<'income' | 'expense'>().notNull(),
-  amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
-  description: text('description').notNull(),
-  category: text('category').notNull(),
-  method: text('method').notNull().default('pix'),
-  occurredAt: date('occurredAt').notNull().defaultNow(),
-  createdAt: timestamp('createdAt').notNull().defaultNow(),
-})
+export const bankAccounts = pgTable(
+  'bank_accounts',
+  {
+    id: serial('id').primaryKey(),
+    userId: text('userId')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    // Institution slug, e.g. 'inter', 'santander', 'manual'.
+    bank: text('bank').notNull(),
+    // Snapshot balance as of `balanceAt`. Current balance = balance + net of
+    // this account's transactions with occurredAt > balanceAt::date.
+    balance: numeric('balance', { precision: 14, scale: 2 })
+      .notNull()
+      .default('0'),
+    balanceAt: timestamp('balanceAt'),
+    createdAt: timestamp('createdAt').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('bank_accounts_user_name_uq').on(t.userId, t.name)],
+)
+
+export type BankAccount = typeof bankAccounts.$inferSelect
+
+export const TRANSACTION_SOURCES = ['manual', 'whatsapp', 'bank', 'ofx'] as const
+export type TransactionSource = (typeof TRANSACTION_SOURCES)[number]
+
+export const transactions = pgTable(
+  'transactions',
+  {
+    id: serial('id').primaryKey(),
+    userId: text('userId').notNull(),
+    // Nullable until existing rows are backfilled; NOT NULL in a later migration.
+    accountId: integer('accountId').references(() => bankAccounts.id, {
+      onDelete: 'restrict',
+    }),
+    type: text('type').$type<'income' | 'expense'>().notNull(),
+    amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
+    description: text('description').notNull(),
+    category: text('category').notNull(),
+    method: text('method').notNull().default('pix'),
+    source: text('source').$type<TransactionSource>().notNull().default('manual'),
+    // ID from the origin system (bank/OFX/WhatsApp) for idempotent imports.
+    externalId: text('externalId'),
+    occurredAt: date('occurredAt').notNull().defaultNow(),
+    createdAt: timestamp('createdAt').notNull().defaultNow(),
+  },
+  (t) => [
+    index('transactions_account_idx').on(t.accountId),
+    uniqueIndex('transactions_user_source_external_uq')
+      .on(t.userId, t.source, t.externalId)
+      .where(sql`${t.externalId} is not null`),
+  ],
+)
 
 export type Transaction = typeof transactions.$inferSelect
