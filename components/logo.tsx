@@ -1,4 +1,6 @@
-export function Logo() {
+import { cn } from '@/lib/utils'
+
+export function Logo({ textClassName }: { textClassName?: string } = {}) {
   return (
     <div className="flex items-center gap-2">
       <span
@@ -7,7 +9,12 @@ export function Logo() {
       >
         R$
       </span>
-      <span className="text-base font-semibold tracking-tight">
+      <span
+        className={cn(
+          'text-base font-semibold tracking-tight whitespace-nowrap',
+          textClassName,
+        )}
+      >
         Bot Finanças
       </span>
     </div>

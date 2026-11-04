@@ -70,8 +70,8 @@ export function TransactionList({
         <h2 id="statement" className="text-sm font-medium">
           Extrato
         </h2>
-        <div className="flex items-center gap-2">
-          <div className="relative">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="relative min-w-0 flex-1 sm:flex-none">
             <Search
               className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
               aria-hidden="true"
@@ -82,10 +82,10 @@ export function TransactionList({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Buscar"
               aria-label="Buscar no extrato"
-              className="h-8 w-40 pl-8"
+              className="h-8 w-full pl-8 sm:w-40"
             />
           </div>
-          <div className="flex rounded-lg bg-muted p-0.5 text-xs">
+          <div className="flex shrink-0 rounded-lg bg-muted p-0.5 text-xs">
             {FILTERS.map(([value, label]) => (
               <button
                 key={value}
