@@ -1,6 +1,6 @@
 'use server'
 
-import { and, desc, eq, gte, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm'
 import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { auth } from '@/lib/auth'
@@ -21,23 +21,66 @@ async function getUserId() {
   return session.user.id
 }
 
-async function selectAccounts(userId: string) {
+const signedAmount = sql`case when ${transactions.type} = 'income' then ${transactions.amount} else -${transactions.amount} end`
+
+async function selectAccountBalances(userId: string) {
   return db
-    .select({ id: bankAccounts.id, name: bankAccounts.name })
+    .select({
+      id: bankAccounts.id,
+      name: bankAccounts.name,
+      bank: bankAccounts.bank,
+      snapshot: bankAccounts.balance,
+      balanceAt: bankAccounts.balanceAt,
+      net: sql<string>`coalesce(sum(${signedAmount}), 0)`,
+    })
     .from(bankAccounts)
+    // Snapshot + net of transactions dated after the snapshot day
+    // (all transactions when there is no snapshot).
+    .leftJoin(
+      transactions,
+      and(
+        eq(transactions.accountId, bankAccounts.id),
+        eq(transactions.userId, bankAccounts.userId),
+        sql`(${bankAccounts.balanceAt} is null or ${transactions.occurredAt} > ${bankAccounts.balanceAt}::date)`,
+      ),
+    )
     .where(eq(bankAccounts.userId, userId))
+    .groupBy(bankAccounts.id)
     .orderBy(bankAccounts.id)
 }
 
-export async function getAccounts() {
+export async function getAccountBalances() {
   const userId = await getUserId()
-  let rows = await selectAccounts(userId)
+  let rows = await selectAccountBalances(userId)
   if (rows.length === 0) {
     // Fallback if the sign-up hook failed or the user predates the seed.
     await ensureDefaultAccounts(userId)
-    rows = await selectAccounts(userId)
+    rows = await selectAccountBalances(userId)
   }
-  return rows.map((a) => ({ ...a, isManual: a.name === MANUAL_ACCOUNT_NAME }))
+
+  // Transactions not yet attached to an account (before the 0002 backfill).
+  const [unassignedRow] = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+      net: sql<string>`coalesce(sum(${signedAmount}), 0)`,
+    })
+    .from(transactions)
+    .where(and(eq(transactions.userId, userId), isNull(transactions.accountId)))
+
+  const accounts = rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    bank: r.bank,
+    isManual: r.name === MANUAL_ACCOUNT_NAME,
+    balanceAt: r.balanceAt ? r.balanceAt.toISOString() : null,
+    balance: Number(r.snapshot) + Number(r.net),
+  }))
+  const unassigned =
+    unassignedRow && unassignedRow.count > 0 ? Number(unassignedRow.net) : null
+  const total =
+    accounts.reduce((s, a) => s + a.balance, 0) + (unassigned ?? 0)
+
+  return { accounts, unassigned, total }
 }
 
 export async function getMonthTransactions(monthKey: string) {
@@ -54,17 +97,6 @@ export async function getMonthTransactions(monthKey: string) {
       ),
     )
     .orderBy(desc(transactions.occurredAt), desc(transactions.id))
-}
-
-export async function getOverallBalance() {
-  const userId = await getUserId()
-  const [row] = await db
-    .select({
-      balance: sql<string>`coalesce(sum(case when ${transactions.type} = 'income' then ${transactions.amount} else -${transactions.amount} end), 0)`,
-    })
-    .from(transactions)
-    .where(eq(transactions.userId, userId))
-  return Number(row?.balance ?? 0)
 }
 
 export async function getMonthlyFlow(monthKey: string, months = 6) {

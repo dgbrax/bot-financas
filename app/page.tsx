@@ -2,14 +2,14 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import {
-  getAccounts,
+  getAccountBalances,
   getMonthTransactions,
   getMonthlyFlow,
-  getOverallBalance,
 } from '@/app/actions/transactions'
 import { currentMonthKey, isValidMonthKey } from '@/lib/finance'
 import { DashboardHeader } from '@/components/dashboard/header'
 import { BalanceSummary } from '@/components/dashboard/balance-summary'
+import { AccountBalances } from '@/components/dashboard/account-balances'
 import { TransactionForm } from '@/components/dashboard/transaction-form'
 import { CategoryBreakdown } from '@/components/dashboard/category-breakdown'
 import { MonthlyFlow } from '@/components/dashboard/monthly-flow'
@@ -27,12 +27,16 @@ export default async function Home({
   const { mes } = await searchParams
   const month = isValidMonthKey(mes) ? mes : currentMonthKey()
 
-  const [monthTransactions, balance, flow, accounts] = await Promise.all([
+  const [monthTransactions, balances, flow] = await Promise.all([
     getMonthTransactions(month),
-    getOverallBalance(),
+    getAccountBalances(),
     getMonthlyFlow(month),
-    getAccounts(),
   ])
+  const accountOptions = balances.accounts.map(({ id, name, isManual }) => ({
+    id,
+    name,
+    isManual,
+  }))
 
   const items = monthTransactions.map((t) => ({
     id: t.id,
@@ -57,14 +61,19 @@ export default async function Home({
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-10 px-5 pt-6 pb-16 md:px-8">
         <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <BalanceSummary
-            balance={balance}
+            balance={balances.total}
             income={income}
             expense={expense}
           />
           <MonthNav month={month} />
         </div>
 
-        <TransactionForm accounts={accounts} />
+        <AccountBalances
+          accounts={balances.accounts}
+          unassigned={balances.unassigned}
+        />
+
+        <TransactionForm accounts={accountOptions} />
 
         <div className="grid gap-10 md:grid-cols-2">
           <CategoryBreakdown items={items} total={expense} />
