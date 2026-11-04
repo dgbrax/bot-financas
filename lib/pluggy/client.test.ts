@@ -125,7 +125,7 @@ describe('PluggyClient: connect token', () => {
     })
     const token = await client(fetchMock).createConnectToken({ clientUserId: 'user-42' })
     expect(token).toBe('ct-1')
-    expect(calls[1].body).toEqual({ options: { clientUserId: 'user-42' } })
+    expect(calls[1].body).toEqual({ options: { clientUserId: 'user-42', avoidDuplicates: true } })
   })
 
   it('scopes the token to an item for reconnection', async () => {
@@ -134,7 +134,7 @@ describe('PluggyClient: connect token', () => {
       'POST /connect_token': () => json(200, { accessToken: 'ct-2' }),
     })
     await client(fetchMock).createConnectToken({ clientUserId: 'u', itemId: 'item-9' })
-    expect(calls[1].body).toEqual({ itemId: 'item-9', options: { clientUserId: 'u' } })
+    expect(calls[1].body).toEqual({ itemId: 'item-9', options: { clientUserId: 'u', avoidDuplicates: true } })
   })
 
   it('rejects a response without accessToken', async () => {

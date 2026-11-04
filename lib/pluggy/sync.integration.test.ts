@@ -19,7 +19,8 @@ describe.skipIf(!RUN)('Pluggy sync (sandbox + test DB)', async () => {
   const webhook = await import('./webhook')
   const { parseItem } = await import('./types')
 
-  const client = pluggy()
+  // Collection runs even when skipped; only build the client when running.
+  const client = RUN ? pluggy() : (null as unknown as ReturnType<typeof pluggy>)
   const stamp = Date.now()
   const userA = { id: randomUUID(), email: `e2e-it-a+${stamp}@example.com` }
   const userB = { id: randomUUID(), email: `e2e-it-b+${stamp}@example.com` }
@@ -157,6 +158,23 @@ describe.skipIf(!RUN)('Pluggy sync (sandbox + test DB)', async () => {
     expect(ev).toMatchObject({ status: 'processed', userId: userA.id })
     expect((await txOf(userA.id)).some((r) => r.id === victim.id)).toBe(false)
   })
+
+  it('drops a second connection to the same accounts (no double import)', async () => {
+    const dup = parseItem(await client.request('POST', '/items', {
+      connectorId: 2, parameters: { user: 'user-ok', password: 'password-ok' }, clientUserId: userA.id,
+    }))
+    const dupRow = await sync.registerItem(userA.id, dup.id)
+    const before = (await txOf(userA.id)).length
+    let r = await sync.syncItem(userA.id, dupRow, 'connect')
+    for (let i = 0; i < 40 && r.status === 'waiting'; i++) {
+      await new Promise((res) => setTimeout(res, 3000))
+      r = await sync.syncItem(userA.id, dupRow, 'manual')
+    }
+    expect(r.status).toBe('error')
+    expect(r.message).toMatch(/já estão conectadas/)
+    expect((await txOf(userA.id)).length).toBe(before)
+    await expect(client.getItem(dup.id)).rejects.toMatchObject({ status: 404 })
+  }, 180_000)
 
   it("user B sees nothing of user A's", async () => {
     expect((await txOf(userB.id)).filter((r) => r.source === 'bank')).toHaveLength(0)

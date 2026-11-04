@@ -162,6 +162,19 @@ export async function syncItem(
       return finish('waiting', empty, 'A conexão precisa de uma ação sua (reconectar).')
     }
 
+    if (!row.lastSyncedAt) {
+      const dup = await findDuplicateConnection(userId, row, client)
+      if (dup) {
+        // Same accounts already connected: keep the existing connection and
+        // drop this one, otherwise every transaction would be imported twice.
+        await client.deleteItem(row.pluggyItemId)
+        await db
+          .update(pluggyItems)
+          .set({ status: 'DISCONNECTED', disconnectedAt: new Date(), errorMessage: 'Conexão duplicada', updatedAt: new Date() })
+          .where(eq(pluggyItems.id, row.id))
+        return finish('error', empty, `Essas contas já estão conectadas (${dup}). Use "Atualizar credenciais" na conexão existente.`)
+      }
+    }
     const counts = await importItemData(userId, row, client)
     await db.update(pluggyItems).set({ lastSyncedAt: new Date() }).where(eq(pluggyItems.id, row.id))
 
@@ -179,6 +192,43 @@ export async function syncItem(
     console.error('pluggy sync failed', { itemRowId: row.id, error: message })
     return finish('error', empty, message)
   }
+}
+
+/**
+ * A new item whose numbered accounts all already belong to another active
+ * connection of the same user and institution is a duplicate connection
+ * (Pluggy's avoidDuplicates is not enforced everywhere, e.g. Sandbox).
+ */
+async function findDuplicateConnection(
+  userId: string,
+  item: { id: number; pluggyItemId: string; connectorId: number },
+  client: PluggyClient,
+): Promise<string | null> {
+  const accounts = await client.listAccounts(item.pluggyItemId)
+  const keys = accounts
+    // Accounts without subtype or number can't be compared: then it's not
+    // treated as a duplicate (import rather than risk dropping data).
+    .map((a) => (a.subtype && numberMask(a.number) ? `${a.type}|${a.subtype}|${numberMask(a.number)}` : null))
+    .filter((k): k is string => k !== null)
+  if (keys.length === 0 || keys.length !== accounts.length) return null
+  const existing = await db
+    .select({
+      key: sql<string>`${bankAccounts.accountType} || '|' || ${bankAccounts.subtype} || '|' || ${bankAccounts.numberMask}`,
+      connector: pluggyItems.connectorName,
+    })
+    .from(bankAccounts)
+    .innerJoin(pluggyItems, eq(pluggyItems.id, bankAccounts.itemId))
+    .where(
+      and(
+        eq(bankAccounts.userId, userId),
+        eq(pluggyItems.userId, userId),
+        eq(pluggyItems.connectorId, item.connectorId),
+        isNull(pluggyItems.disconnectedAt),
+        ne(pluggyItems.id, item.id),
+      ),
+    )
+  const known = new Map(existing.map((e) => [e.key, e.connector]))
+  return keys.every((k) => known.has(k)) ? (known.get(keys[0]) ?? 'outra conexão') : null
 }
 
 async function upsertAccount(

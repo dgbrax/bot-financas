@@ -160,6 +160,9 @@ export class PluggyClient {
       // clientUserId must be inside `options`; at the root it is discarded.
       options: {
         clientUserId: input.clientUserId,
+        // Same credentials again must not create a second item (it would
+        // import the same accounts twice).
+        avoidDuplicates: true,
         ...(input.webhookUrl ? { webhookUrl: input.webhookUrl } : {}),
       },
     })

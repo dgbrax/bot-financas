@@ -36,6 +36,8 @@ export function ConnectButton({
     setPhase('idle')
     if ('error' in r) {
       setMessage({ kind: 'error', text: r.error })
+    } else if (r.sync.status === 'error') {
+      setMessage({ kind: 'error', text: r.sync.message ?? 'A conexão foi salva, mas a importação falhou.' })
     } else if (r.sync.status === 'success') {
       setMessage({ kind: 'info', text: `Conectado. ${r.sync.created} transações importadas.` })
     } else {
