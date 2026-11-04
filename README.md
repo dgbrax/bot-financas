@@ -57,3 +57,35 @@ corepack pnpm dev            # http://localhost:3000
 corepack pnpm test           # unit tests (vitest)
 corepack pnpm build          # production build, includes type checking
 ```
+
+## Bank integration (Pluggy)
+
+- Connect banks at `/conexoes` with the Pluggy Connect widget. Credentials go to Pluggy; the app only stores the Item id, accounts and transactions.
+- Sandbox-only by default (`PLUGGY_SANDBOX_ONLY`): the widget lists only test institutions and the server refuses real ones. Sandbox login: `user-ok` / `password-ok`, MFA `123456`.
+- Sync runs when a bank is connected, with the **Sincronizar** button, from the daily cron (`/api/cron/sync`) and, once registered, from Pluggy webhooks (`/api/webhooks/pluggy`, authenticated by the `x-webhook-secret` header). Webhooks require a public HTTPS URL and are **not registered** yet.
+- `corepack pnpm test:integration` runs the import flow against the Pluggy Sandbox and the database in `DATABASE_URL` (use a TEST branch).
+
+## Deployment (Vercel Hobby, private testing)
+
+Target: Vercel Hobby + Neon **TEST** branch + Pluggy **Sandbox**. Nothing here is Vercel-only except `vercel.json` (cron schedule) and the optional `@vercel/analytics` tag.
+
+Environment variables (Project → Settings → Environment Variables):
+
+| Variable | Value | Environments |
+|---|---|---|
+| `DATABASE_URL` | Neon TEST branch, **pooled** endpoint (`-pooler`), `sslmode=verify-full` | Production, Preview |
+| `BETTER_AUTH_SECRET` | new random value (`openssl rand -base64 32`), not the local one | Production, Preview |
+| `BETTER_AUTH_URL` | `https://<project>.vercel.app` — Production only; leave unset on Preview (the app falls back to the deployment URL) | Production |
+| `PLUGGY_CLIENT_ID` / `PLUGGY_CLIENT_SECRET` | Pluggy application credentials (Sandbox/demo) | Production, Preview |
+| `PLUGGY_SANDBOX_ONLY` | `true` | Production, Preview |
+| `CRON_SECRET` | random, ≥16 chars (`openssl rand -hex 32`) | Production |
+| `PLUGGY_WEBHOOK_SECRET` | random; only needed once a webhook is registered | Production |
+| `ENABLE_EXPERIMENTAL_COREPACK` | `1` — makes Vercel use `pnpm@12.3.4` from `packageManager` | Production, Preview |
+
+Daily sync: `vercel.json` schedules `GET /api/cron/sync` at `0 9 * * *` (06:00 in Brasília). On Hobby, cron runs at most once a day and may start at any minute within that hour; delivery is best-effort (a run can be missed or repeated). The job is idempotent: it only syncs connections not synced in the last 20 h, and each connection syncs one run at a time. The route allows up to 300 s (Hobby maximum) and stops starting new connections after 240 s; the rest go first on the next run.
+
+Moving to a VPS later: run `next build && next start` behind a reverse proxy with the same env vars, and replace Vercel Cron with a crontab entry:
+
+```
+0 9 * * * curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/sync
+```
