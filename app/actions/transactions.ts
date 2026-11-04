@@ -28,17 +28,25 @@ async function selectAccountBalances(userId: string) {
       bank: bankAccounts.bank,
       snapshot: bankAccounts.balance,
       balanceAt: bankAccounts.balanceAt,
+      itemId: bankAccounts.itemId,
+      accountType: bankAccounts.accountType,
+      numberMask: bankAccounts.numberMask,
       net: sql<string>`coalesce(sum(${signedAmount}), 0)`,
     })
     .from(bankAccounts)
     // Snapshot + net of transactions dated after the snapshot day
-    // (all transactions when there is no snapshot).
+    // (all transactions when there is no snapshot). For accounts imported
+    // from a bank, the bank's balance already includes its own transactions,
+    // so only manual entries are added on top. Rows the user confirmed as
+    // duplicates never count.
     .leftJoin(
       transactions,
       and(
         eq(transactions.accountId, bankAccounts.id),
         eq(transactions.userId, bankAccounts.userId),
+        isNull(transactions.duplicateOf),
         sql`(${bankAccounts.balanceAt} is null or ${transactions.occurredAt} > ${bankAccounts.balanceAt}::date)`,
+        sql`(${bankAccounts.externalId} is null or ${transactions.source} <> 'bank')`,
       ),
     )
     .where(eq(bankAccounts.userId, userId))
@@ -70,6 +78,9 @@ export async function getAccountBalances() {
     bank: r.bank,
     // Default account for manual entries (survives renaming "Carteira").
     isManual: r.bank === 'manual',
+    itemId: r.itemId,
+    accountType: r.accountType,
+    numberMask: r.numberMask,
     balanceAt: r.balanceAt ? r.balanceAt.toISOString() : null,
     balanceCents: toCents(r.snapshot) + toCents(r.net),
   }))

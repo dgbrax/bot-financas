@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 const NAV = [
   { href: '/', label: 'Painel' },
   { href: '/contas', label: 'Contas' },
+  { href: '/conexoes', label: 'Conexões' },
 ] as const
 
 export function DashboardHeader({ name }: { name: string }) {
