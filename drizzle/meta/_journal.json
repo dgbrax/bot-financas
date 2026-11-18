@@ -43,6 +43,13 @@
       "when": 1793819640526,
       "tag": "0005_pluggy_credentials",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794971785693,
+      "tag": "0006_telegram",
+      "breakpoints": true
     }
   ]
 }

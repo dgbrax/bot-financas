@@ -142,7 +142,7 @@ export const bankAccounts = pgTable(
 
 export type BankAccount = typeof bankAccounts.$inferSelect
 
-export const TRANSACTION_SOURCES = ['manual', 'whatsapp', 'bank', 'ofx'] as const
+export const TRANSACTION_SOURCES = ['manual', 'whatsapp', 'bank', 'ofx', 'telegram'] as const
 export type TransactionSource = (typeof TRANSACTION_SOURCES)[number]
 
 export const transactions = pgTable(
@@ -270,3 +270,34 @@ export const pluggyCredentials = pgTable('pluggy_credentials', {
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 })
+
+// Telegram identities use numeric Telegram IDs as text, never usernames.
+export const telegramLinks = pgTable('telegram_links', {
+  id: text('id').primaryKey(),
+  telegramUserId: text('telegramUserId').notNull().unique(),
+  chatId: text('chatId').notNull().unique(),
+  userId: text('userId').notNull().unique().references(() => user.id, { onDelete: 'cascade' }),
+  accountId: integer('accountId').notNull().references(() => bankAccounts.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+})
+
+export const telegramLinkCodes = pgTable('telegram_link_codes', {
+  hash: text('hash').primaryKey(),
+  userId: text('userId').notNull().unique().references(() => user.id, { onDelete: 'cascade' }),
+  accountId: integer('accountId').notNull().references(() => bankAccounts.id, { onDelete: 'cascade' }),
+  expiresAt: timestamp('expiresAt').notNull(),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+})
+
+// Durable deduplication + short-lived reply outbox. Reply is erased after delivery.
+export const telegramUpdates = pgTable('telegram_updates', {
+  updateId: text('updateId').primaryKey(),
+  chatId: text('chatId').notNull(),
+  messageId: text('messageId').notNull(),
+  telegramUserId: text('telegramUserId').notNull(),
+  userId: text('userId').references(() => user.id, { onDelete: 'set null' }),
+  bindingId: text('bindingId'),
+  reply: text('reply'),
+  receivedAt: timestamp('receivedAt').notNull().defaultNow(),
+  deliveredAt: timestamp('deliveredAt'),
+}, t => [uniqueIndex('telegram_updates_chat_message_uq').on(t.chatId, t.messageId)])

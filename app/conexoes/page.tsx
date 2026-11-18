@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import type { Metadata } from 'next'
 import { desc, eq } from 'drizzle-orm'
 import { headers } from 'next/headers'
@@ -118,6 +119,7 @@ export default async function ConnectionsPage() {
             errorMessage: r.errorMessage,
           }))}
         />
+        <Link href="/telegram" className="text-sm text-primary underline">Vincular meu Telegram</Link>
       </main>
     </div>
   )
