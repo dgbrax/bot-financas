@@ -35,6 +35,7 @@ export const METHODS = [
 export const METHOD_VALUES = METHODS.map((m) => m.value) as string[]
 
 export function methodLabel(value: string) {
+  if (value === 'outro') return 'Outro'
   return METHODS.find((m) => m.value === value)?.label ?? value
 }
 
@@ -78,6 +79,19 @@ export function currentMonthKey() {
 
 export function isValidMonthKey(value: string | undefined): value is string {
   return !!value && /^\d{4}-(0[1-9]|1[0-2])$/.test(value)
+}
+
+/** True for a real calendar date in YYYY-MM-DD form (rejects 2026-02-31). */
+export function isValidISODate(value: string) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!m) return false
+  const [y, mo, d] = m.slice(1).map(Number)
+  const date = new Date(Date.UTC(y, mo - 1, d))
+  return (
+    date.getUTCFullYear() === y &&
+    date.getUTCMonth() === mo - 1 &&
+    date.getUTCDate() === d
+  )
 }
 
 export function shiftMonth(monthKey: string, delta: number) {
